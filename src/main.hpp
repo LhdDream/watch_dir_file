@@ -15,6 +15,8 @@
 #include <thread>
 #include <unistd.h>
 #include <sys/epoll.h>
+#include <sys/socket.h>
+#include <fstream>
 using namespace std;
 
 struct filename_fd_desc
@@ -22,6 +24,15 @@ struct filename_fd_desc
     int fd;              // 文件描述符号
     char name[32];       // 文件名
     char base_name[128]; // 文件的绝对路径为了获取文件的文件描述符号
+};
+struct data
+{
+    int sign ;
+    char mac[18];
+    char file_name[256];
+    int length;
+    char file_contents[1024];
+    char events[256];
 };
 class Inotify
 {

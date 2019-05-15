@@ -9,78 +9,22 @@
 #include <sys/msg.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include "threadpool.hpp"
 #define SHM_NAME "/memmap"
 #define SHM_NAME_SEM "/memmap_sem"
 
 int array_index = 0;
-
 const char *base_dir;
 int temp_flag = 0;
-
+Inotify main_important;
+/*消息队列的结构题*/
 struct msgmbuf {
   int mtype;
   char mtext[1024];
 };
 
-Inotify main_important;
-
-void get_shm(int sockfd)
-{
-    int fd;
-    sem_t *sem;
-    fd = shm_open(SHM_NAME, O_RDWR, 0);
-    sem = sem_open(SHM_NAME_SEM, 0);
-
-    if (fd < 0 || sem == SEM_FAILED)
-    {
-        cout << "shm_open or sem_open failed...";
-        cout << strerror(errno) << endl;
-        return ;
-    }
-
-    struct stat fileStat;
-    fstat(fd, &fileStat);
-    char *memPtr;
-    char buffer[fileStat.st_size];
-    memPtr = (char *)mmap(NULL, fileStat.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    for (int i = 0; i < fileStat.st_size; i++)
-    {
-        buffer[i] =  memPtr[i];
-    }
-    cout << buffer << endl;
-    sem_wait(sem);
-    sem_close(sem);
-    shm_unlink(SHM_NAME);
-    shm_unlink(SHM_NAME_SEM);
-}
-
-void send_img(int sockfd)
-{
-    int ret = -1;
-    int msg_flags, msg_id;
-    key_t key;
-    struct msgmbuf msg_mbuf;
-    int flag = 0;
-    key = 1024;
-    msg_flags = IPC_CREAT;
-    msg_id = msgget(key, msg_flags | 0666);
-    if (-1 == msg_id)
-    {
-        cout << "message failed !" << endl;
-    }
-
-    ret = msgrcv(msg_id, &msg_mbuf, sizeof(struct msgmbuf), 0, 0);
-    if (-1 == ret)
-    {
-        cout << "receive message failed!" << endl;
-    }
-    else
-    {
-        cout << "receive message  " << msg_mbuf.mtext << endl;
-    }
-    ret = msgctl(key,IPC_RMID,NULL);
-}
-void printdir(char *dir, int depth,int fd)
+/*把目录的子目录中添加到监听队列之中*/
+void printdir(char *dir, int depth, int fd)
 {
     //打开目录指针
     DIR *Dp;
@@ -120,7 +64,128 @@ void printdir(char *dir, int depth,int fd)
     //关闭文件指针
     closedir(Dp);
 }
+/*获取共享内存*/
+void get_shm(int sockfd,struct data open_file)
+{
+    int fd;
+    sem_t *sem;
+    fd = shm_open(SHM_NAME, O_RDWR, 0);
+    //打开共享内存
+    if(fd < 0 )
+    {
+        cout << "fd failed " << strerror(errno) << endl;
+        return ;
+    }
+    sem = sem_open(SHM_NAME_SEM, 0);
+    //信号量
+    if (fd < 0 || sem == SEM_FAILED)
+    {
+        cout << "shm_open or sem_open failed...";
+        cout << strerror(errno) << endl;
+        return ;
+    }
+    struct stat fileStat;
+    fstat(fd, &fileStat);
+    char *memPtr;
+    open_file.length = fileStat.st_size;
+    memPtr = (char *)mmap(NULL, fileStat.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    /*映射到文件之后*/
+    for (int i = 0; i < fileStat.st_size; i++)
+    {
+      if( i % 1024 == 0)
+      {
+          cout << open_file.file_contents << endl;
+          send(sockfd,&open_file,sizeof(struct data),0);
+          memset(open_file.file_contents,'\0',sizeof(open_file.file_contents));
+      }
+      open_file.file_contents[i] = memPtr[i];
+    }
+    send(sockfd, &open_file, sizeof(struct data), 0);
+    sem_wait(sem);
+    sem_close(sem);
+}
+/*获取文件路径长度*/
+int send_img(int sockfd,struct data open_file)
+{
 
+    int ret = -1;
+    int msg_flags, msg_id;
+    int flag = 0;
+    key_t key;
+    struct msgmbuf msg_mbuf;
+    key = 1024;
+    msg_flags = IPC_CREAT;
+    msg_id = msgget(key, msg_flags | 0666);
+    /*创建一个消息队列*/
+    memset(msg_mbuf.mtext, '\0', sizeof(msg_mbuf));
+    if (-1 == msg_id)
+    {
+        cout << "message failed !" << endl;
+    }
+
+    ret = msgrcv(msg_id, &msg_mbuf, sizeof(struct msgmbuf), 0, 0);
+    if (-1 == ret)
+    {
+        cout << "receive message failed!" << endl;
+    }
+    else
+    {
+        strcpy(open_file.file_name,msg_mbuf.mtext);
+        cout << "receive message[]" << msg_mbuf.mtext << endl;
+        
+    }
+    if(strlen(msg_mbuf.mtext) > 0 )
+    {
+        return 1;
+    }
+    else
+    {
+        return 0;
+    }
+   // ret = msgctl(key,IPC_RMID,NULL);
+}
+/*open所要打开的工作函数*/
+void open_task(int sockfd,char * buffer)
+{
+    struct data open_file;
+    open_file.sign = 0 ; //标志发送文件的请求
+    strcpy(open_file.events,buffer);
+    if(send_img(sockfd,open_file) == 1)
+    {
+        IP real;
+        real.getLocalInfo();
+        strcpy(open_file.mac,real.real_mac);
+        /*获取ip的大小，并且发送文件内容*/
+        get_shm(sockfd,open_file);
+    }
+}
+// void close_task(int sockfd, char *buffer)
+// {
+//     struct data close_file;
+//     close_file.sign = 1; //标志接受文件的请求
+//     strcpy(close_file.events, buffer);
+//     if (send_img(sockfd, close_file) == 1)
+//     {
+//         IP real;
+//         real.getLocalInfo();
+//         strcpy(close_file.mac, real.real_mac);
+//         /*获取ip的大小，并且发送文件内容*/
+//         send(sockfd,&close_file,sizeof(struct data),0);
+//     }
+//     memset(&close_file,0,sizeof(struct data));
+//     while(1)
+//     {
+//         recv(sockfd,&close_file,sizeof(struct data),0);
+//         if(close_file.length == 0)
+//         {
+//             break;
+//         }
+//         ofstream out;
+//         out.open(close_file.file_name,ios::app | ios::out);
+//         out << close_file.file_contents ;
+//         out.close();
+//     }
+// }
 static int handle_events(int epollfd, int fd, int argc, char *argv[], struct filename_fd_desc *FileArray,int sockfd)
 {
     int i,k;
@@ -130,10 +195,10 @@ static int handle_events(int epollfd, int fd, int argc, char *argv[], struct fil
     char num[4];
     char buf[2048];
     struct inotify_event *events;
+    std::threadpool executor { 20 };
+
     memset(buf,0,sizeof(buf));
-
     len = read(fd,buf,sizeof(buf));
-
     for(ptr = buf ; ptr < buf + len;ptr += sizeof(struct inotify_event) + events->len)
     {
         events = (struct inotify_event *) ptr;
@@ -145,19 +210,16 @@ static int handle_events(int epollfd, int fd, int argc, char *argv[], struct fil
             {
                 cout << "OPEN file    " << events->name << endl;
                 strcpy(buffer,"open file");
-                //strcat(buffer,event->name);
             }
             if(events->mask & IN_CLOSE_NOWRITE)
             {
                 cout << "CLOSE_NOWRITE   " << events->name << endl;
-                // strcpy(buffer, "close_NOWRITE file");
-                // strcat(buffer, event->name);
+                strcpy(buffer,"close file");
             }
             if(events->mask & IN_CLOSE_WRITE)
             {
                 cout << "IN_CLOSE_WRITE   " <<events->name <<endl;
-                //strcpy(buffer, "INCLOSE_NOWRITE file");
-                // strcat(buffer, event->name);
+                strcpy(buffer,"close file");
             }
             if (events->mask & IN_CREATE)
             { /* 如果是创建文件则打印文件名 */
@@ -191,30 +253,17 @@ static int handle_events(int epollfd, int fd, int argc, char *argv[], struct fil
                     cout << "delete file   " << events->name << endl;
             }
         }
-        if(strcmp(buffer,"open file") == 0)
+        if ((strcmp(buffer, "open file") == 0 ))
         {
-            cout << "this is \n";
-          //strcat(buffer,event->name);
-        //   sprintf(num, "%d", strlen(buffer));
-        //   k = send(sockfd, num, strlen(num), 0);
-        //   if (k < 0) {
-        //     cout << "error 1" << endl;
-        //     return 1;
-        //     }
-        //     k = send(sockfd, buffer, strlen(buffer), 0);
-        //     if (k < 0)
-        //     {
-        //         cout << "error 2" << endl;
-        //         return 1;
-        //     }
-          IP real;
-          real.getLocalInfo();
-        //   get_shm(sockfd);
-          //cout << "open file sockfd" << endl;
-          send_img(sockfd);
+            strcat(buffer,events->name);
+            executor.commit(open_task, sockfd,buffer);
         }
+        // if((strcmp(buffer,"close file") == 0 ))
+        // {
+        //     strcat(buffer,events->name);
+        //     executor.commit(close_task,sockfd,buffer);
+        // }
     }
-    
 }
 
 int main(int argc , char** argv)
@@ -222,8 +271,8 @@ int main(int argc , char** argv)
 
     struct filename_fd_desc FileArray[main_important.array_length];
     struct epoll_event Epollarray[main_important.epoll_number];
-    const char * ip = "127.0.0.1";
-    int port = 8080;
+    const char * ip = "192.168.28.164";
+    int port = 8888;
 
     struct sockaddr_in server_address;
     bzero(&server_address,sizeof(server_address));

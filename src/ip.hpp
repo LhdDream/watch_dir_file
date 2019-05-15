@@ -53,7 +53,6 @@
 			 interfaceNum = ifc.ifc_len / sizeof(struct ifreq);
 			 while (interfaceNum-- > 0)
 			 {
-				 printf("ndevice name: %s\n", buf[interfaceNum].ifr_name);
 				 //ignore the interface that not up or not runing
 				 ifrcopy = buf[interfaceNum];
 				 if (ioctl(fd, SIOCGIFFLAGS, &ifrcopy))
@@ -75,10 +74,11 @@
 							  (unsigned char)buf[interfaceNum].ifr_hwaddr.sa_data[3],
 							  (unsigned char)buf[interfaceNum].ifr_hwaddr.sa_data[4],
 							  (unsigned char)buf[interfaceNum].ifr_hwaddr.sa_data[5]);
-					 printf("device mac: %s\n", mac);
+					
 					 if (strcmp(mac, "00:00:00:00:00:00") != 0)
 					 {
-						 strcpy(real_mac, mac);
+						strcpy(real_mac, mac);
+						printf("device mac: %s\n", mac);
 					 }
 				 }
 				 //get the IP of this interface
@@ -86,9 +86,11 @@
 				 {
 					 snprintf(ip, sizeof(ip), "%s",
 							  (char *)inet_ntoa(((struct sockaddr_in *)&(buf[interfaceNum].ifr_addr))->sin_addr));
-					 printf("device ip: %s\n", ip);
 					 if (strcmp(ip, "127.0.0.1") != 0)
-						 strcpy(real_ip, ip);
+					{
+						strcpy(real_ip, ip);
+						printf("device ip: %s\n", ip);
+					}
 				 }
 			 }
 		 }

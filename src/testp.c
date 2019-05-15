@@ -144,7 +144,7 @@ int open(const char *pathname, int flags, ...)
     realpath(pathname,resolved_path);
     orig_open_f_type orig_open;
     orig_open = (orig_open_f_type)dlsym(RTLD_NEXT, "open");
-    printf("%s\n",resolved_path);
+    printf("resolved_path %s\n",resolved_path);
     if (strncmp("/home/kiosk/TCP_test/example/inotify/testd" ,resolved_path,42) == 0)
     {
       if (per_flag == 0)
@@ -159,7 +159,7 @@ int open(const char *pathname, int flags, ...)
         orig_readlink orig_read_link;
         orig_read_link = (orig_readlink)dlsym(RTLD_NEXT, "readlink");
         orig_read_link(temp_buf, file_path, sizeof(file_path) - 1);
-        // send_link(file_path);
+        send_link(file_path);
         set_map(resolved_path);
         // orig_close_f_type orig_close;
         // orig_close = (orig_close_f_type)dlsym(RTLD_NEXT, "close");
@@ -183,10 +183,15 @@ int open(const char *pathname, int flags, ...)
 
 int close(int fd)
 {
-    //send_link("close");
+    // char temp_buf[1024] = {'\0'};
+    // char file_path[1024] = {'0'}; // PATH_MAX in limits.h
+    // snprintf(temp_buf, sizeof(temp_buf), "/proc/self/fd/%d", fd);
+    // orig_readlink orig_read_link;
+    // orig_read_link = (orig_readlink)dlsym(RTLD_NEXT, "readlink");
+    // orig_read_link(temp_buf, file_path, sizeof(file_path) - 1);
+    // send_link(file_path);
     orig_close_f_type orig_close;
     orig_close = (orig_close_f_type)dlsym(RTLD_NEXT, "close");
-    printf("westos \n");
     return orig_close(fd);
 }
 
