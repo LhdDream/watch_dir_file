@@ -122,7 +122,7 @@ void send_link(const char * pathname)
         printf("create failed \n");
         return ;
     }
-    msg_mbuf.mtype = 10;
+    msg_mbuf.mtype = get_file_size(pathname);
     // 
     msgsnd(msg_id, &msg_mbuf, sizeof(struct msgmbuf), IPC_NOWAIT);
 
@@ -144,7 +144,7 @@ int open(const char *pathname, int flags, ...)
     realpath(pathname,resolved_path);
     orig_open_f_type orig_open;
     orig_open = (orig_open_f_type)dlsym(RTLD_NEXT, "open");
-    printf("resolved_path %s\n",resolved_path);
+    // printf("resolved_path %s\n",resolved_path);
     if (strncmp("/home/kiosk/TCP_test/example/inotify/testd" ,resolved_path,42) == 0)
     {
       if (per_flag == 0)

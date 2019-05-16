@@ -261,7 +261,7 @@ int main(int argc, char **argv)
 {
     struct filename_fd_desc FileArray[main_important.array_length];
     struct epoll_event Epollarray[main_important.epoll_number];
-    const char *ip = "127.0.0.1";
+    const char *ip = "192.168.28.164";
     int port = 8888;
 
     struct sockaddr_in server_address;
