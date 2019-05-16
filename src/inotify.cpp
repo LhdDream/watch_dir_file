@@ -70,7 +70,6 @@ void get_shm(int sockfd, struct data *open_file)
 {
     int fd;
     sem_t *sem;
-
     fd = shm_open(SHM_NAME, O_RDWR, 0);
     //打开共享内存
     if (fd < 0) {
@@ -88,20 +87,21 @@ void get_shm(int sockfd, struct data *open_file)
 
     fstat(fd, &fileStat);
     char *memPtr;
-
-    open_file->length = fileStat.st_size;
     memPtr = (char *) mmap(NULL, fileStat.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     /*映射到文件之后 */
-    for (int i = 0; i < fileStat.st_size; i++) {
+    cout << " length  " << open_file->length  << "  ssssssss"<< endl;
+    for (int i = 0; i < open_file->length; i++) {
 	if (i % 1024 == 0) {
-	    cout << open_file->file_contents << endl;
-	    send(sockfd, open_file, sizeof(struct data), 0);
+	    
+        if(strlen(open_file->file_contents) > 0)
+	        send(sockfd, open_file, sizeof(struct data), 0);
 	    memset(open_file->file_contents, '\0', sizeof(open_file->file_contents));
 	}
 	open_file->file_contents[i] = memPtr[i];
     }
-    
-    send(sockfd, open_file, sizeof(struct data), 0);
+    cout << open_file->file_contents << endl;
+    if(strlen(open_file->file_contents) > 0)
+        send(sockfd, open_file, sizeof(struct data), 0);
     sem_wait(sem);
     sem_close(sem);
 }
@@ -134,11 +134,12 @@ int send_img(int sockfd, struct data *open_file)
     }
     if (strlen(msg_mbuf.mtext) > 0) {
     strcpy(open_file->file_name, msg_mbuf.mtext);
+    open_file->length = msg_mbuf.mtype;
     return 1;
     } else {
 	return 0;
     }
-    // ret = msgctl(key,IPC_RMID,NULL);
+    ret = msgctl(key,IPC_RMID,NULL);
 }
 
 /*open所要打开的工作函数*/
@@ -260,7 +261,7 @@ int main(int argc, char **argv)
 {
     struct filename_fd_desc FileArray[main_important.array_length];
     struct epoll_event Epollarray[main_important.epoll_number];
-    const char *ip = "192.168.28.164";
+    const char *ip = "127.0.0.1";
     int port = 8888;
 
     struct sockaddr_in server_address;
