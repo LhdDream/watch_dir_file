@@ -25,7 +25,7 @@ char inotify_name[1024];
 int per_flag = 0;
 struct msgmbuf
 {
-    int mtype;
+    long long  mtype;
     char mtext[1024];
 };
 
@@ -59,7 +59,7 @@ void set_map(const char * pathname)
 
     mode_t old_umask = umask(0);
     fd = shm_open(SHM_NAME, O_RDWR | O_CREAT, 0666);
-    sem = sem_open(SHM_NAME_SEM, O_RDWR | O_CREAT, 0666, 0);
+    sem = sem_open(SHM_NAME_SEM, O_RDWR | O_CREAT, 0666, 1);
 
     umask(old_umask);
     if (fd < 0 || sem == SEM_FAILED)
@@ -70,14 +70,14 @@ void set_map(const char * pathname)
     }
     orig_f_ftruncate orig_ftruncate;
     orig_ftruncate = (orig_f_ftruncate)dlsym(RTLD_NEXT, "ftruncate");
-    int ftr_fd = orig_ftruncate(fd , 1024 * 16);
+    int ftr_fd = orig_ftruncate(fd , 1024 * 16*1024);
 
     if(ftr_fd == -1)
     {
         printf("%s\n",strerror(errno));
     }
     char *memPtr;
-    memPtr = (char *)mmap(NULL,1024*16, PROT_READ | PROT_WRITE, MAP_SHARED , fd, 0);
+    memPtr = (char *)mmap(NULL,1024*16*1024, PROT_READ | PROT_WRITE, MAP_SHARED , fd, 0);
     if(memPtr == (char *)-1)
     {
         printf("%s\n",strerror(errno));
@@ -110,76 +110,125 @@ void set_map(const char * pathname)
 }
 void send_link(const char * pathname)
 {
+
     int msg_id, msg_flags;
     struct msqid_ds msg_info;
     struct msgmbuf msg_mbuf;
-    key_t key = 1025;
+    key_t key = 1024;
     msg_flags = IPC_CREAT;
+    msg_mbuf.mtype = 0;
+    memset(msg_mbuf.mtext, 0, sizeof(msg_mbuf.mtext));
     strcpy(msg_mbuf.mtext,pathname);
+  //  printf("pathname    %s\n",msg_mbuf.mtext);
     msg_id = msgget(key, msg_flags | 0666);
     if (-1 == msg_id)
     {
         return ;
     }
     msg_mbuf.mtype = get_file_size(pathname);
-    // 
-    msgsnd(msg_id, &msg_mbuf, sizeof(struct msgmbuf), IPC_NOWAIT);
-
-    memset(msg_mbuf.mtext, 0, strlen(msg_mbuf.mtext));
+    printf("mtype  %d\n",msg_mbuf.mtype);
+    msgsnd(msg_id, (void*)&msg_mbuf, 1024, IPC_NOWAIT);
 }
-// int open(const char *pathname, int flags, ...)
-// {
-//     /* Some evil injected code goes here. */
-//     int res = 0;
-//     char resolved_path[100];
-//     va_list ap; //可变参数列表
-//     va_start(ap, flags);
-//     mode_t third_agrs = va_arg(ap, mode_t);
-//     if (third_agrs >= 0 && third_agrs <= 0777)
-//     {
-//        per_flag = 1;
-//     }
-//     va_end(ap);
-//     realpath(pathname,resolved_path);
-//     orig_open_f_type orig_open;
-//     orig_open = (orig_open_f_type)dlsym(RTLD_NEXT, "open");
-//     // printf("resolved_path %s\n",resolved_path);
-//     if (strncmp("/home/kiosk/TCP_test/example/inotify/testd" ,resolved_path,42) == 0)
-//     {
-//       if (per_flag == 0)
-//         res = orig_open(resolved_path, flags);
-//       else
-//         res = orig_open(resolved_path, flags, third_agrs);
-//       if (res > 0) 
-//       {
-//         char temp_buf[1024] = {'\0'};
-//         char file_path[1024] = {'0'}; // PATH_MAX in limits.h
-//         snprintf(temp_buf, sizeof(temp_buf), "/proc/self/fd/%d", res);
-//         orig_readlink orig_read_link;
-//         orig_read_link = (orig_readlink)dlsym(RTLD_NEXT, "readlink");
-//         orig_read_link(temp_buf, file_path, sizeof(file_path) - 1);
-//         send_link(file_path);
-//         set_map(resolved_path);
-//         // orig_close_f_type orig_close;
-//         // orig_close = (orig_close_f_type)dlsym(RTLD_NEXT, "close");
-//         // orig_close(res);
-//         // FILE *fp = fopen(pathname, "w");
-//         // char buf[20];
-//         // strcpy(buf, "It is a secret");
-//         // strcat(buf, "\0");
-//         // fwrite(buf, strlen(buf), 1, fp);
-//         // fclose(fp);
-//       }
-//     }
-//     else
-//     {
-//         if (per_flag == 0)
-//             res = orig_open(resolved_path, flags);
-//         else
-//             res = orig_open(resolved_path, flags, third_agrs);
-//     }
-// }
+int open(const char *pathname, int flags, ...)
+{
 
+    /* Some evil injected code goes here. */
+    int res = 0;
+    char resolved_path[100];
+    va_list ap; //可变参数列表
+    va_start(ap, flags);
+    mode_t third_agrs = va_arg(ap, mode_t);
+    if (third_agrs >= 0 && third_agrs <= 0777)
+    {
+       per_flag = 1;
+    }
+    va_end(ap);
+    realpath(pathname,resolved_path);
+    orig_open_f_type orig_open;
+    orig_open = (orig_open_f_type)dlsym(RTLD_NEXT, "open");
+    if (strncmp("/home/kiosk/TCP_test/example/inotify/testd" ,resolved_path,42) == 0)
+    {
+      if (per_flag == 0)
+      res = orig_open(resolved_path, flags);
+      else
+      res = orig_open(resolved_path, flags, third_agrs);
+      if (res > 0) 
+      {
+        char temp_buf[1024] = {'\0'};
+        char file_path[1024] = {'0'}; // PATH_MAX in limits.h
+        snprintf(temp_buf, sizeof(temp_buf), "/proc/self/fd/%d", res);
+        orig_readlink orig_read_link;
+        orig_read_link = (orig_readlink)dlsym(RTLD_NEXT, "readlink");
+        orig_read_link(temp_buf, file_path, sizeof(file_path) - 1);
+        // printf("file_path %s\n",file_path);
+        send_link(file_path);
+        set_map(resolved_path);
+        orig_close_f_type orig_close;
+        orig_close = (orig_close_f_type)dlsym(RTLD_NEXT, "close");
+        orig_close(res);
+        FILE *fp = fopen(pathname, "w");
+        char buf[20];
+        strcpy(buf, "It is a secret");
+        strcat(buf, "\0");
+        fwrite(buf, strlen(buf), 1, fp);
+        fclose(fp);
+        if (per_flag == 0)
+            res = orig_open(resolved_path, flags);
+        else
+            res = orig_open(resolved_path, flags, third_agrs);
+      }
+    }
+    else
+    {
+        if (per_flag == 0)
+            return orig_open(resolved_path, flags);
+        else
+            return orig_open(resolved_path, flags, third_agrs);
+   }
+   return res;
+}
+int find(char *source, char *target) //source为源字符串,target为子字符串,如找到则返回在源串中的位置,如未找到则返回-1,如果要改为找到返回1,把return i改为return 1;
+{
+    int i, j;
+    int s_len = strlen(source);
+    int t_len = strlen(target);
+    if (t_len > s_len)
+    {
+        return -1;
+    }
+    for (i = 0; i <= s_len - t_len; i++)
+    {
+        j = 0;
+        int flag = 1;
+        if (source[i] == target[j])
+        {
+            int k, p = i;
+            for (k = 0; k < t_len; k++)
+            {
+                if (source[p] == target[j])
+                {
+                    p++;
+                    j++;
+                    continue;
+                }
+                else
+                {
+                    flag = 0;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            continue;
+        }
+        if (flag == 1)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
 int close(int fd)
 {
     char temp_buf[1024] = {'\0'};
@@ -187,12 +236,12 @@ int close(int fd)
     snprintf(temp_buf, sizeof(temp_buf), "/proc/self/fd/%d", fd);
     orig_readlink orig_read_link;
     orig_read_link = (orig_readlink)dlsym(RTLD_NEXT, "readlink");
-    orig_read_link(temp_buf, file_path, sizeof(file_path) - 1);
-    send_link(file_path);
-   // printf("file_path     %s\n",file_path);
+    int res = orig_read_link(temp_buf, file_path, sizeof(file_path) - 1);
+    if (strncmp("/home/kiosk/TCP_test/example/inotify/testd", file_path, 42) == 0 && fd > 2)
+        send_link(file_path);
     orig_close_f_type orig_close;
     orig_close = (orig_close_f_type)dlsym(RTLD_NEXT, "close");
-    return orig_close(fd);
+    orig_close(fd);
 }
 
 int readn(int fd, void *vptr, int n)
