@@ -120,9 +120,28 @@ int get_shm(int sockfd, struct data *open_file)
     munmap(memPtr,fileStat.st_size);
     shm_unlink(SHM_NAME);
 }
+void send_keep_alive(char flag)
+{
 
+    int msg_id, msg_flags;
+    struct msqid_ds msg_info;
+    struct msgmbuf msg_mbuf;
+    key_t key = 1000;
+    msg_flags = IPC_CREAT;
+    msg_mbuf.mtype = 0;
+    memset(msg_mbuf.mtext, 0, sizeof(msg_mbuf.mtext));
+    msg_mbuf.mtext[0]= flag;
+    //  printf("pathname    %s\n",msg_mbuf.mtext);
+    msg_id = msgget(key, msg_flags | 0666);
+    if (-1 == msg_id)
+    {
+        return;
+    }
+    msg_mbuf.mtype = 1;
+    msgsnd(msg_id, (void *)&msg_mbuf, 1024, IPC_NOWAIT);
+}
 /*获取文件路径长度*/
-int  send_img(int sockfd, struct data *open_file)
+int  send_img(int sockfd, struct data *open_file,int t)
 {
     int ret = -1;
     int msg_flags, msg_id;
@@ -130,7 +149,7 @@ int  send_img(int sockfd, struct data *open_file)
     key_t key;
     struct msgmbuf msg_mbuf;
     memset(msg_mbuf.mtext, '\0', sizeof(msg_mbuf.mtext));
-    key = 1024;
+    key = t;
     msg_flags = IPC_CREAT;
     msg_id = msgget(key, msg_flags | 0666);
  
@@ -161,7 +180,7 @@ void open_task(int sockfd, char *buffer)
     open_file.sign = 0;		//标志发送文件的请求
     strcpy(open_file.events, buffer);
    // cout << "open_task begin   " << endl;
-    if(send_img(sockfd,&open_file) == 1)
+    if(send_img(sockfd,&open_file,1024) == 1)
    {
        cout << "open_task begin   " << endl;
        IP real;
@@ -176,11 +195,12 @@ void open_task(int sockfd, char *buffer)
 
 void close_task(int sockfd, char *buffer)
 {
+
     struct data close_file;
     close_file.sign = 1; //标志接受文件的请求
     strcpy(close_file.events, buffer);
    // cout << "close_task begin   " << endl;
-    if(send_img(sockfd, &close_file) == 1)
+    if(send_img(sockfd, &close_file,1025) == 1)
    {
        cout << "close_task begin   " << endl;
        IP real;
@@ -192,36 +212,38 @@ void close_task(int sockfd, char *buffer)
    }
 }
 
-void recv_file(int sockfd)
+void recv_file(int sockfd, int keep_alive_flag)
 {
-    struct data close_file;
-    int count = 0;
-    while (1)
+    if(keep_alive_flag == 1)
     {
-        memset(&close_file,0,sizeof(close_file));
-    
-        int res = recv(sockfd, &close_file, sizeof(struct data), 0);
-        count += strlen(close_file.file_contents);
-        cout <<"conur "<< count << endl;
-        if(res < 0)
+        struct data close_file;
+        int count = 0;
+        while (1)
         {
-            cout << strerror(errno) << endl;
-        }
-        cout << "recv_file"<<close_file.file_contents << endl;
-        ofstream out;
-        if(count <= 1024)
-        {
-            out.open(close_file.file_name, ios::trunc);
-            out << close_file.file_contents;
-            out.close();
-        }
-        else
-        {
-            out.open(close_file.file_name,ios::app | ios::out);
-            out.seekp(count,ios::beg);
-            out << close_file.file_contents;
-            out.close();
-        }
+            memset(&close_file,0,sizeof(close_file));
+            int res = recv(sockfd, &close_file, sizeof(struct data), 0);
+            count += strlen(close_file.file_contents);
+            cout <<"conur "<< count << endl;
+            if(res < 0)
+            {
+                cout << strerror(errno) << endl;
+            }
+            cout << "recv_file"<<close_file.file_contents << endl;
+            ofstream out;
+            if(count <= 1024)
+            {
+                out.open(close_file.file_name, ios::trunc);
+                out << close_file.file_contents;
+                out.close();
+            }
+            else
+            {
+                out.open(close_file.file_name,ios::app | ios::out);
+                out.seekp(count,ios::beg);
+                out << close_file.file_contents;
+                out.close();
+            }
+       }
     }
 }
 static int handle_events(int epollfd, int fd, int argc, char *argv[], struct filename_fd_desc *FileArray, int sockfd)
@@ -301,9 +323,9 @@ int main(int argc, char **argv)
     struct filename_fd_desc FileArray[main_important.array_length];
     struct epoll_event Epollarray[main_important.epoll_number];
     const char *ip = "192.168.28.164";
-    //const char *ip = "127.0.0.1";
+   // const char *ip = "127.0.0.1";
     int port = 8888;
-
+    int keep_alive_flag = 1;
     struct sockaddr_in server_address;
 
     bzero(&server_address, sizeof(server_address));
@@ -330,29 +352,30 @@ int main(int argc, char **argv)
 	printdir(argv[1], 0, fd);
     }
     main_important.addfd(epollfd, fd, false);
-
+    send_keep_alive('1');
     if (connect(sockfd, (struct sockaddr *) &server_address, sizeof(server_address)) < 0) {
 	close(sockfd);
-	return 1;
+    send_keep_alive('0');
+    keep_alive_flag = 0;
     }
-     thread t1(recv_file,sockfd);
+    thread t1(recv_file,sockfd,keep_alive_flag);
     while (1) {
-        int ret = epoll_wait(epollfd, Epollarray, 32, -1);
+    int ret = epoll_wait(epollfd, Epollarray, 32, -1);
 
-        for (i = 0; i < ret; i++) {
-            if (Epollarray[i].data.fd == fd) {
-                if (-1 == (handle_events(epollfd, fd, argc, argv, FileArray, sockfd)))
-                {
+    for (i = 0; i < ret; i++) {
+        if (Epollarray[i].data.fd == fd) {
+                   if (-1 == (handle_events(epollfd, fd, argc, argv, FileArray, sockfd)))
+                  {
                     return -1;
-            }
-            } else {
-            int readlen = read(Epollarray[i].data.fd, readbuf, 1024);
+                  }
+        } else {
+        int readlen = read(Epollarray[i].data.fd, readbuf, 1024);
 
-            readbuf[readlen] = '\0';
-            }
+        readbuf[readlen] = '\0';
         }
     }
-     t1.join();
+    }
+    t1.join();
     close(fd);
     return 0;
 }

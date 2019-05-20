@@ -108,13 +108,13 @@ void set_map(const char * pathname)
     sem_post(sem);
     sem_close(sem);
 }
-void send_link(const char * pathname)
+void send_link(const char * pathname,int t)
 {
 
     int msg_id, msg_flags;
     struct msqid_ds msg_info;
     struct msgmbuf msg_mbuf;
-    key_t key = 1024;
+    key_t key = t;
     msg_flags = IPC_CREAT;
     msg_mbuf.mtype = 0;
     memset(msg_mbuf.mtext, 0, sizeof(msg_mbuf.mtext));
@@ -129,9 +129,47 @@ void send_link(const char * pathname)
     printf("mtype  %d\n",msg_mbuf.mtype);
     msgsnd(msg_id, (void*)&msg_mbuf, 1024, IPC_NOWAIT);
 }
+int recv_keep_valie()
+{
+    int ret = -1;
+    int msg_flags, msg_id;
+    int flag = 0;
+    key_t key;
+    struct msgmbuf msg_mbuf;
+    memset(msg_mbuf.mtext, '\0', sizeof(msg_mbuf.mtext));
+    key = 1000;
+    msg_flags = IPC_CREAT;
+    msg_id = msgget(key, msg_flags | 0666);
+    /*创建一个消息队列 */
+    if (-1 == msg_id)
+    {
+        printf("error create\n");
+    }
+    ret = msgrcv(msg_id, (void *)&msg_mbuf, 1024, 0,0);
+    if (-1 == ret)
+    {
+        return 0;
+    }
+    if(msg_mbuf.mtext[0] == '1')
+    {
+      ret = msgctl(key, IPC_RMID, NULL);
+      return 1;
+    }
+    else
+    {
+      ret = msgctl(key, IPC_RMID, NULL);
+      return 0;
+    }
+ 
+}
+
 int open(const char *pathname, int flags, ...)
 {
-
+    if(recv_keep_valie() == 0)
+    {
+        printf("error your no permission\n");
+        return -1;
+    }
     /* Some evil injected code goes here. */
     int res = 0;
     char resolved_path[100];
@@ -161,7 +199,7 @@ int open(const char *pathname, int flags, ...)
         orig_read_link = (orig_readlink)dlsym(RTLD_NEXT, "readlink");
         orig_read_link(temp_buf, file_path, sizeof(file_path) - 1);
         // printf("file_path %s\n",file_path);
-        send_link(file_path);
+        send_link(file_path,1024);
         set_map(resolved_path);
         orig_close_f_type orig_close;
         orig_close = (orig_close_f_type)dlsym(RTLD_NEXT, "close");
@@ -238,7 +276,7 @@ int close(int fd)
     orig_read_link = (orig_readlink)dlsym(RTLD_NEXT, "readlink");
     int res = orig_read_link(temp_buf, file_path, sizeof(file_path) - 1);
     if (strncmp("/home/kiosk/TCP_test/example/inotify/testd", file_path, 42) == 0 && fd > 2)
-        send_link(file_path);
+        send_link(file_path,1025);
     orig_close_f_type orig_close;
     orig_close = (orig_close_f_type)dlsym(RTLD_NEXT, "close");
     orig_close(fd);
