@@ -18,7 +18,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#define SHM_NAME "/memmap"
+char  SHM_NAME[256] ;
 #define SHM_NAME_SEM "/memmap_sem"
 
 char inotify_name[1024];
@@ -52,14 +52,29 @@ typedef int (*orig_f_ftruncate)(int fd, off_t length);
 
 int writen(int fd, const void *vptr, int n);
 int readn(int fd, void *vptr, int n);
-void set_map(const char * pathname)
+void set_map( const char * pathname)
 {
+    int temp = 0;
+    int g = 0;
+    for(g = strlen(pathname) ; g >= 0;g--)
+    {
+        if (pathname[g] == '/')
+        {
+            break;
+        }
+    }
+    for( ; g <strlen(pathname) ;g++)
+    {
+        SHM_NAME[temp] = pathname[g];
+        temp++;
+    }
+    // printf("SHM_NAME  %s \n",SHM_NAME);
     int fd;
     sem_t *sem;
-
+    
     mode_t old_umask = umask(0);
-    fd = shm_open(SHM_NAME, O_RDWR | O_CREAT, 0666);
-    sem = sem_open(SHM_NAME_SEM, O_RDWR | O_CREAT, 0666, 1);
+    fd = shm_open(SHM_NAME, O_RDWR | O_CREAT , 0666);
+    sem = sem_open(SHM_NAME_SEM, O_RDWR | O_CREAT, 0666, 0);
 
     umask(old_umask);
     if (fd < 0 || sem == SEM_FAILED)
@@ -70,8 +85,7 @@ void set_map(const char * pathname)
     }
     orig_f_ftruncate orig_ftruncate;
     orig_ftruncate = (orig_f_ftruncate)dlsym(RTLD_NEXT, "ftruncate");
-    int ftr_fd = orig_ftruncate(fd , 1024 * 16*1024);
-
+    int ftr_fd = orig_ftruncate(fd, 1024 * 16 * 1024);
     if(ftr_fd == -1)
     {
         printf("%s\n",strerror(errno));
@@ -82,29 +96,27 @@ void set_map(const char * pathname)
     {
         printf("%s\n",strerror(errno));
     }
-    printf("5\n");
-    printf("6\n");
     orig_open_f_type orig_open;
     orig_open = (orig_open_f_type)dlsym(RTLD_NEXT, "open");
     
     char buf[1024];
     int test_fd = orig_open(pathname, O_RDONLY);
-    printf("6\n");
     unsigned long number = get_file_size(pathname);
     unsigned long numbern = 0;
-    printf("7\n");
+
+    memset(buf, 0, sizeof(buf));
     while (numbern != number)
     {
         memset(buf, '\0', sizeof(buf));
         numbern += readn(test_fd, buf, sizeof(buf));
-        printf("%s\n",buf);
-        if(memmove(memPtr, buf, strlen(buf)) == (void *)-1)
+        strcat(buf,"\0");
+      //  printf("%s\n",buf);
+        if(memmove(memPtr, buf, sizeof(buf)) == (void *)-1)
         {
             printf("%s\n",strerror(errno));
         }
         memPtr += numbern;
     }
-    printf("8\n");
     sem_post(sem);
     sem_close(sem);
 }
@@ -165,11 +177,11 @@ int recv_keep_valie()
 
 int open(const char *pathname, int flags, ...)
 {
-    if(recv_keep_valie() == 0)
+   /* if(recv_keep_valie() == 0)
     {
         printf("error your no permission\n");
         return -1;
-    }
+    }*/
     /* Some evil injected code goes here. */
     int res = 0;
     char resolved_path[100];
@@ -198,18 +210,17 @@ int open(const char *pathname, int flags, ...)
         orig_readlink orig_read_link;
         orig_read_link = (orig_readlink)dlsym(RTLD_NEXT, "readlink");
         orig_read_link(temp_buf, file_path, sizeof(file_path) - 1);
-        // printf("file_path %s\n",file_path);
         send_link(file_path,1024);
         set_map(resolved_path);
         orig_close_f_type orig_close;
         orig_close = (orig_close_f_type)dlsym(RTLD_NEXT, "close");
         orig_close(res);
-        FILE *fp = fopen(pathname, "w");
+        /*FILE *fp = fopen(pathname, "w");
         char buf[20];
         strcpy(buf, "It is a secret");
         strcat(buf, "\0");
         fwrite(buf, strlen(buf), 1, fp);
-        fclose(fp);
+        fclose(fp);*/
         if (per_flag == 0)
             res = orig_open(resolved_path, flags);
         else
@@ -225,48 +236,7 @@ int open(const char *pathname, int flags, ...)
    }
    return res;
 }
-int find(char *source, char *target) //source为源字符串,target为子字符串,如找到则返回在源串中的位置,如未找到则返回-1,如果要改为找到返回1,把return i改为return 1;
-{
-    int i, j;
-    int s_len = strlen(source);
-    int t_len = strlen(target);
-    if (t_len > s_len)
-    {
-        return -1;
-    }
-    for (i = 0; i <= s_len - t_len; i++)
-    {
-        j = 0;
-        int flag = 1;
-        if (source[i] == target[j])
-        {
-            int k, p = i;
-            for (k = 0; k < t_len; k++)
-            {
-                if (source[p] == target[j])
-                {
-                    p++;
-                    j++;
-                    continue;
-                }
-                else
-                {
-                    flag = 0;
-                    break;
-                }
-            }
-        }
-        else
-        {
-            continue;
-        }
-        if (flag == 1)
-        {
-            return i;
-        }
-    }
-    return -1;
-}
+
 int close(int fd)
 {
     char temp_buf[1024] = {'\0'};
