@@ -69,10 +69,7 @@ void printdir(char *dir, int depth, int fd)
 /*获取共享内存*/
 int get_shm(int sockfd, struct data *open_file,char * name)
 {
-    memset(SHM_NAME,'\0',sizeof(SHM_NAME));
-    SHM_NAME[0] = '/';
-    strcat(SHM_NAME,name);
-    cout << " SHM_NAME   " << SHM_NAME << endl;
+    cout << "SHM_NAME   "  << SHM_NAME << endl;
     int fd;
     sem_t *sem;
     fd = shm_open(SHM_NAME, O_RDWR, 0666);
@@ -94,30 +91,35 @@ int get_shm(int sockfd, struct data *open_file,char * name)
     close(fd);
     cout << " length  " << open_file->events  << "  ssssssss"<< endl;
     long temp = 0;
-    for(int i = 0 ;i < fileStat.st_size ;i++)
-    {
-       open_file->file_contents[temp] = memPtr[i];
-        temp++;
-        if(i % 1024 == 0)
-        {
-            if(strlen(open_file->file_contents) > 0)
+    memset(open_file->file_contents, '\0',
+           sizeof(open_file->file_contents));
+    //多线程发送
+    // int n = open_file->length / 1024 + 4; /*设置10分*/
+    // size_t percent = 1024;
+    // struct data blocks[n];
+    // for(int temp = 0 ; temp < n ;temp++)
+    // {
+
+    // }
+    for (int i = 0; i < (open_file->length /1024 + 4)*1024; i++) {
+      if (i % 1024 == 0) {
+        if (strlen(open_file->file_contents) > 0) {
+
+            int res = send(sockfd, open_file, sizeof(struct data), 0);
+            if (res == -1)
             {
-                cout << open_file->file_contents ;
-                int res = send(sockfd,open_file,sizeof(struct data),0);
-                if(res == -1)
-                {
-                    cout << strerror(errno) << endl;
-                }
-                memset(open_file->file_contents, 0, sizeof(open_file->file_contents));
-            }
-            temp = 0;
+                cout << strerror(errno) << endl;
+          }
         }
-        // cout << memPtr[i];
+        memset(open_file->file_contents, '\0',
+               sizeof(open_file->file_contents));
+        temp = 0;
+      }
+      open_file->file_contents[temp] = memPtr[i];
+      temp++;
     }
-    // cout << endl;
     if(temp > 0)
     {
-        cout << open_file->file_contents << endl;
         int res = send(sockfd, open_file, sizeof(struct data), 0);
         if (res == -1)
         {
@@ -171,23 +173,33 @@ int  send_img(int sockfd, struct data *open_file,int t)
     return -1;
     } else {
 	cout << "receive message[]   " << msg_mbuf.mtext << endl;
+    int temp = 0;
+    int g = 0;
+    for (g = strlen(msg_mbuf.mtext); g >= 0; g--)
+    {
+        if (msg_mbuf.mtext[g] == '/')
+        {
+            break;
+        }
+    }
+    for (; g < strlen(msg_mbuf.mtext); g++)
+    {
+        SHM_NAME[temp] = msg_mbuf.mtext[g];
+        temp++;
     }
     if (strlen(msg_mbuf.mtext) > 0)
     {
         strcpy(open_file->file_name, msg_mbuf.mtext);
         open_file->length = msg_mbuf.mtype;
-        ret = msgctl(msg_id, IPC_RMID, NULL);
-        if (ret == -1)
-        {
-            cout << strerror(errno) << endl;
-        }
         return 1;
     }
+    }
+    
     return 0; 
 }
 
 /*open所要打开的工作函数*/
-void open_task(int sockfd, char *buffer,char * name)
+void open_task(int sockfd, char *buffer, char *name)
 {
 
     struct data open_file;
@@ -196,11 +208,11 @@ void open_task(int sockfd, char *buffer,char * name)
     if(send_img(sockfd,&open_file,1024) == 1)
    {
        cout << "open_task begin   " << endl;
-    //    IP real;
-    //    real.getLocalInfo();
-    //    strcpy(open_file.mac, real.real_mac);
+       IP real;
+       real.getLocalInfo();
+       strcpy(open_file.mac, real.real_mac);
 /*获取ip的大小，并且发送文件内容 */
-       get_shm(sockfd, &open_file,name);
+       get_shm(sockfd, &open_file, name);
    }
 }
 
@@ -214,10 +226,10 @@ void close_task(int sockfd, char *buffer)
     if(send_img(sockfd, &close_file,1025) == 1)
    {
        cout << "close_task begin   " << endl;
-    //    IP real;
-    //    real.getLocalInfo();
-    //    strcpy(close_file.mac, real.real_mac);
-    //    cout << "mac         " << close_file.mac << endl;
+       IP real;
+       real.getLocalInfo();
+       strcpy(close_file.mac, real.real_mac);
+       cout << "mac         " << close_file.mac << endl;
        /*获取ip的大小，并且发送文件内容*/
        send(sockfd, &close_file, sizeof(struct data), 0);
    }
@@ -225,7 +237,7 @@ void close_task(int sockfd, char *buffer)
 
 void recv_file(int sockfd, int keep_alive_flag)
 {
-    if(keep_alive_flag == 1)
+   if(keep_alive_flag == 1)
     {
         struct data close_file;
         int count = 0;
@@ -234,12 +246,11 @@ void recv_file(int sockfd, int keep_alive_flag)
             memset(&close_file,0,sizeof(close_file));
             int res = recv(sockfd, &close_file, sizeof(struct data), 0);
             count += strlen(close_file.file_contents);
-            cout <<"conur "<< count << endl;
             if(res < 0)
             {
                 cout << strerror(errno) << endl;
             }
-            cout << "recv_file"<<close_file.file_contents << endl;
+            cout << "recv_name  "<<close_file.file_name << endl;
             ofstream out;
             if(count <= 1024)
             {
@@ -329,9 +340,9 @@ int main(int argc, char **argv)
 {
     struct filename_fd_desc FileArray[main_important.array_length];
     struct epoll_event Epollarray[main_important.epoll_number];
-    //const char *ip = "192.168.28.164";
-    const char *ip = "127.0.0.1";
-    int port = 8080;
+    const char *ip = "192.168.28.164";
+    //const char *ip = "127.0.0.1";
+    int port = 8888;
     int keep_alive_flag = 1;
     struct sockaddr_in server_address;
 

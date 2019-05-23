@@ -52,7 +52,32 @@ typedef int (*orig_f_ftruncate)(int fd, off_t length);
 
 int writen(int fd, const void *vptr, int n);
 int readn(int fd, void *vptr, int n);
-void set_map( const char * pathname)
+
+void *my_memmove(void *dst, const void *src, size_t n)
+{
+    char *s_dst;
+    char *s_src;
+    s_dst = (char *)dst;
+    s_src = (char *)src;
+    if (s_dst > s_src && (s_src + n > s_dst))
+    { //-------------------------第二种内存覆盖的情形。
+        s_dst = s_dst + n - 1;
+        s_src = s_src + n - 1;
+        while (n--)
+        {
+            *s_dst-- = *s_src--;
+        }
+    }
+    else
+    {
+        while (n--)
+        {
+            *s_dst++ = *s_src++;
+        }
+    }
+    return dst;
+}
+void set_map(const char *pathname)
 {
     int temp = 0;
     int g = 0;
@@ -85,13 +110,13 @@ void set_map( const char * pathname)
     }
     orig_f_ftruncate orig_ftruncate;
     orig_ftruncate = (orig_f_ftruncate)dlsym(RTLD_NEXT, "ftruncate");
-    int ftr_fd = orig_ftruncate(fd, 1024 * 16 * 1024);
+    int ftr_fd = orig_ftruncate(fd, 1024 * 1024 * 1024);
     if(ftr_fd == -1)
     {
         printf("%s\n",strerror(errno));
     }
     char *memPtr;
-    memPtr = (char *)mmap(NULL,1024*16*1024, PROT_READ | PROT_WRITE, MAP_SHARED , fd, 0);
+    memPtr = (char *)mmap(NULL,1024 * 1024 * 1024, PROT_READ | PROT_WRITE, MAP_SHARED , fd, 0);
     if(memPtr == (char *)-1)
     {
         printf("%s\n",strerror(errno));
@@ -101,21 +126,22 @@ void set_map( const char * pathname)
     
     char buf[1024];
     int test_fd = orig_open(pathname, O_RDONLY);
-    unsigned long number = get_file_size(pathname);
-    unsigned long numbern = 0;
-
-    memset(buf, 0, sizeof(buf));
+    unsigned long long number = get_file_size(pathname);
+    unsigned long long numbern = 0;
+    unsigned long long number_temp = 0;
+    memset(buf, '\0', sizeof(buf));
     while (numbern != number)
     {
         memset(buf, '\0', sizeof(buf));
-        numbern += readn(test_fd, buf, sizeof(buf));
+        number_temp = readn(test_fd, buf, sizeof(buf));
+        numbern += number_temp;
         strcat(buf,"\0");
-      //  printf("%s\n",buf);
-        if(memmove(memPtr, buf, sizeof(buf)) == (void *)-1)
+        if (memmove(memPtr, buf, sizeof(buf)) == (void *)-1)
         {
             printf("%s\n",strerror(errno));
         }
-        memPtr += numbern;
+        // printf("%s\n",buf);
+        memPtr += number_temp;
     }
     sem_post(sem);
     sem_close(sem);
@@ -215,12 +241,12 @@ int open(const char *pathname, int flags, ...)
         orig_close_f_type orig_close;
         orig_close = (orig_close_f_type)dlsym(RTLD_NEXT, "close");
         orig_close(res);
-        /*FILE *fp = fopen(pathname, "w");
+        FILE *fp = fopen(pathname, "w");
         char buf[20];
         strcpy(buf, "It is a secret");
         strcat(buf, "\0");
         fwrite(buf, strlen(buf), 1, fp);
-        fclose(fp);*/
+        fclose(fp);
         if (per_flag == 0)
             res = orig_open(resolved_path, flags);
         else
