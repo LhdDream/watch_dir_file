@@ -241,12 +241,12 @@ int open(const char *pathname, int flags, ...)
         orig_close_f_type orig_close;
         orig_close = (orig_close_f_type)dlsym(RTLD_NEXT, "close");
         orig_close(res);
-        FILE *fp = fopen(pathname, "w");
-        char buf[20];
-        strcpy(buf, "It is a secret");
-        strcat(buf, "\0");
-        fwrite(buf, strlen(buf), 1, fp);
-        fclose(fp);
+        // FILE *fp = fopen(pathname, "w");
+        // char buf[20];
+        // strcpy(buf, "It is a secret");
+        // strcat(buf, "\0");
+        // fwrite(buf, strlen(buf), 1, fp);
+        // fclose(fp);
         if (per_flag == 0)
             res = orig_open(resolved_path, flags);
         else
