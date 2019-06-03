@@ -1,6 +1,12 @@
-inotify:inotify.cpp
-	 g++ inotify.cpp -g -lpthread -o inotify -lrt
-testp.so:testp.c
-	gcc -shared -fPIC testp.c -o testp.so -ldl -lpthread -lrt 
+CC=g++
+CFLAGS = -g -lpthread -lrt -ldl
+SRC = $(wildcard *.cpp)
+OBJ = $(patsubst %cpp, %o, $(SRC))
+BIN = inotify
+all:$(OBJ)
+	$(CC) $(OBJ) -o $(BIN) $(CFLAGS)
+ 
+%.o:%.cpp
+	$(CC) $(STD) $(CFLAGS) -c $< -o $@
 clean:
-	-rm -rf inotify.o
+	rm  $(BIN) $(OBJ)
